@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "dgSpecHash": "NfJmGohAItc=",
+  "success": true,
+  "projectFilePath": "C:\\Workspace\\LTI\\proctor_lti\\ProctorLti.DotNet\\ProctorLti.Api\\ProctorLti.Api.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\VTIWAAR1\\.nuget\\packages\\microsoft.identitymodel.abstractions\\8.2.1\\microsoft.identitymodel.abstractions.8.2.1.nupkg.sha512",
+    "C:\\Users\\VTIWAAR1\\.nuget\\packages\\microsoft.identitymodel.jsonwebtokens\\8.2.1\\microsoft.identitymodel.jsonwebtokens.8.2.1.nupkg.sha512",
+    "C:\\Users\\VTIWAAR1\\.nuget\\packages\\microsoft.identitymodel.logging\\8.2.1\\microsoft.identitymodel.logging.8.2.1.nupkg.sha512",
+    "C:\\Users\\VTIWAAR1\\.nuget\\packages\\microsoft.identitymodel.tokens\\8.2.1\\microsoft.identitymodel.tokens.8.2.1.nupkg.sha512",
+    "C:\\Users\\VTIWAAR1\\.nuget\\packages\\system.identitymodel.tokens.jwt\\8.2.1\\system.identitymodel.tokens.jwt.8.2.1.nupkg.sha512"
+  ],
+  "logs": []
+}
