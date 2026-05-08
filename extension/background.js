@@ -142,27 +142,105 @@ async function injectMsnWidgetWhenReady(tabId) {
 
 /**
  * @param {number} tabId
+ * @param {{ title?: string, message?: string, type?: string }} [notice]
  */
-async function injectPauseOverlay(tabId) {
+async function injectPauseOverlay(tabId, notice) {
+  const title =
+    typeof notice?.title === 'string' && notice.title.trim()
+      ? notice.title.trim()
+      : 'Session paused';
+  const message =
+    typeof notice?.message === 'string' && notice.message.trim()
+      ? notice.message.trim()
+      : 'Please wait for the invigilator to resume your quiz.';
+  const type = notice?.type === 'alert' ? 'alert' : 'info';
+
   await chrome.scripting.executeScript({
     target: { tabId, allFrames: true },
-    func: function inject() {
+    args: [title, message, type],
+    func: function inject(noticeTitle, noticeMessage, noticeType) {
       const id = 'd2l-lti-proctor-pause-overlay';
-      if (document.getElementById(id)) return;
-      const d = document.createElement('div');
-      d.id = id;
-      d.setAttribute('aria-hidden', 'true');
-      d.setAttribute('role', 'presentation');
-      d.style.cssText = [
-        'position:fixed',
-        'inset:0',
-        'z-index:2147483646',
-        'background:rgba(0,0,0,0.45)',
-        'pointer-events:auto',
-        'user-select:none',
-        '-webkit-user-select:none',
-      ].join(';');
-      (document.body || document.documentElement).appendChild(d);
+      const boxId = 'd2l-lti-proctor-pause-notice';
+      let overlay = document.getElementById(id);
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = id;
+        overlay.setAttribute('aria-hidden', 'true');
+        overlay.setAttribute('role', 'presentation');
+        overlay.style.cssText = [
+          'position:fixed',
+          'inset:0',
+          'z-index:2147483646',
+          'background:rgba(0,0,0,0.45)',
+          'pointer-events:auto',
+          'user-select:none',
+          '-webkit-user-select:none',
+        ].join(';');
+        (document.body || document.documentElement).appendChild(overlay);
+      }
+
+      let box = document.getElementById(boxId);
+      if (!box) {
+        box = document.createElement('section');
+        box.id = boxId;
+        box.style.cssText = [
+          'position:fixed',
+          'top:24px',
+          'left:50%',
+          'transform:translateX(-50%)',
+          'z-index:2147483647',
+          'display:flex',
+          'gap:10px',
+          'align-items:flex-start',
+          'width:min(560px,calc(100vw - 24px))',
+          'padding:12px 14px',
+          'border-radius:10px',
+          'border:1px solid #b8bec7',
+          'background:#ffffff',
+          'box-shadow:0 10px 26px rgba(0,0,0,0.34)',
+          'font-family:Segoe UI,Arial,sans-serif',
+          'color:#1f2937',
+          'pointer-events:auto',
+        ].join(';');
+
+        const icon = document.createElement('span');
+        icon.id = `${boxId}-icon`;
+        icon.style.cssText = [
+          'display:inline-flex',
+          'width:18px',
+          'height:18px',
+          'font-size:16px',
+          'line-height:18px',
+          'margin-top:2px',
+          'flex:0 0 auto',
+        ].join(';');
+
+        const content = document.createElement('div');
+        content.style.cssText = ['display:flex', 'flex-direction:column', 'gap:4px'].join(';');
+
+        const titleEl = document.createElement('h3');
+        titleEl.id = `${boxId}-title`;
+        titleEl.style.cssText = ['margin:0', 'font-size:14px', 'font-weight:700'].join(';');
+
+        const messageEl = document.createElement('p');
+        messageEl.id = `${boxId}-message`;
+        messageEl.style.cssText = ['margin:0', 'font-size:13px', 'line-height:1.35'].join(';');
+
+        content.appendChild(titleEl);
+        content.appendChild(messageEl);
+        box.appendChild(icon);
+        box.appendChild(content);
+        (document.body || document.documentElement).appendChild(box);
+      }
+
+      const iconEl = document.getElementById(`${boxId}-icon`);
+      const titleEl = document.getElementById(`${boxId}-title`);
+      const messageEl = document.getElementById(`${boxId}-message`);
+      if (iconEl) {
+        iconEl.textContent = noticeType === 'alert' ? '⚠️' : 'ℹ️';
+      }
+      if (titleEl) titleEl.textContent = noticeTitle;
+      if (messageEl) messageEl.textContent = noticeMessage;
     },
   });
 }
@@ -269,7 +347,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return { ok: true };
     }
     if (msg.op === 'pause') {
-      await injectPauseOverlay(quizTabId);
+      await injectPauseOverlay(quizTabId, msg.pauseNotice);
       await chrome.tabs.update(quizTabId, { active: true });
       if (typeof quiz.windowId === 'number') {
         await chrome.windows.update(quiz.windowId, { focused: true });

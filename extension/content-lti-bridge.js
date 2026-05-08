@@ -23,6 +23,22 @@
     }
   }
 
+  function getInputValue(id) {
+    var el = document.getElementById(id);
+    if (!el) return '';
+    return (el.value || el.getAttribute('value') || '').trim();
+  }
+
+  function getPauseNotice() {
+    var title = getInputValue('lti-pause-title') || 'Session paused';
+    var message =
+      getInputValue('lti-pause-message') ||
+      'Please wait for the invigilator to resume your quiz.';
+    var type = getInputValue('lti-pause-type').toLowerCase();
+    if (type !== 'alert') type = 'info';
+    return { title: title, message: message, type: type };
+  }
+
   function btnAction(id) {
     if (id === 'btn-launch-quiz') return 'launch';
     if (id === 'btn-play') return 'play';
@@ -52,6 +68,7 @@
 
       var payload = { type: 'proctor', op: op };
       if (op === 'launch') payload.testRunnerUrl = testRunnerUrl;
+      if (op === 'pause') payload.pauseNotice = getPauseNotice();
 
       chrome.runtime.sendMessage(payload, function (res) {
         if (chrome.runtime.lastError) {
