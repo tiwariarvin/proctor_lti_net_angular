@@ -1,5 +1,7 @@
 const SESSION_PREFIX = 'proctorQuiz:';
 const widgetRefreshBySession = new Map();
+const EMBED_WIDGET_URL = 'https://example.com/';
+const EMBED_WIDGET_TITLE = 'Embedded content';
 
 /**
  * @param {number} tabId
@@ -15,7 +17,8 @@ function sessionKey(tabId, frameId = 0) {
 async function injectMsnWidget(tabId) {
   await chrome.scripting.executeScript({
     target: { tabId },
-    func: function injectWidget() {
+    args: [EMBED_WIDGET_URL, EMBED_WIDGET_TITLE],
+    func: function injectWidget(embedUrl, embedTitle) {
       const widgetId = 'd2l-lti-proctor-msn-widget';
       if (document.getElementById(widgetId)) {
         return;
@@ -54,8 +57,8 @@ async function injectMsnWidget(tabId) {
       header.textContent = 'Quick widget';
 
       const frame = document.createElement('iframe');
-      frame.src = 'https://www.msn.com/';
-      frame.setAttribute('title', 'MSN content');
+      frame.src = embedUrl;
+      frame.setAttribute('title', embedTitle);
       frame.setAttribute('loading', 'eager');
       frame.style.cssText = [
         'display:block',
