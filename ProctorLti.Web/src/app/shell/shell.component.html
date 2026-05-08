@@ -2,6 +2,13 @@
   <p class="error">{{ loadError }}</p>
 } @else {
   <input type="hidden" id="lti-test-runner-url" [value]="boot?.testRunnerUrl ?? ''" />
+  <input type="hidden" id="lti-pause-title" value="Proctor Notice" />
+  <input
+    type="hidden"
+    id="lti-pause-message"
+    value="Your quiz is temporarily paused. Please wait for further instructions."
+  />
+  <input type="hidden" id="lti-pause-type" value="info" />
   <header>
     <h1>Test session</h1>
     <button
