@@ -1,4 +1,5 @@
 const SESSION_PREFIX = 'proctorQuiz:';
+const widgetRefreshBySession = new Map();
 
 /**
  * @param {number} tabId
@@ -25,8 +26,8 @@ async function injectMsnWidget(tabId) {
       host.setAttribute('aria-label', 'MSN widget');
       host.style.cssText = [
         'position:fixed',
+        'top:12px',
         'right:12px',
-        'bottom:12px',
         'width:min(420px,calc(100vw - 24px))',
         'height:min(320px,calc(100vh - 24px))',
         'z-index:2147483647',
@@ -52,23 +53,6 @@ async function injectMsnWidget(tabId) {
       ].join(';');
       header.textContent = 'Quick widget';
 
-      const closeBtn = document.createElement('button');
-      closeBtn.type = 'button';
-      closeBtn.setAttribute('aria-label', 'Close widget');
-      closeBtn.textContent = 'x';
-      closeBtn.style.cssText = [
-        'border:0',
-        'background:transparent',
-        'font-size:14px',
-        'line-height:1',
-        'cursor:pointer',
-        'padding:4px 6px',
-      ].join(';');
-      closeBtn.addEventListener('click', function () {
-        host.remove();
-      });
-      header.appendChild(closeBtn);
-
       const frame = document.createElement('iframe');
       frame.src = 'https://www.msn.com/';
       frame.setAttribute('title', 'MSN content');
@@ -85,6 +69,32 @@ async function injectMsnWidget(tabId) {
       (document.body || document.documentElement).appendChild(host);
     },
   });
+}
+
+/**
+ * @param {string} key
+ */
+function clearWidgetRefreshListener(key) {
+  const existing = widgetRefreshBySession.get(key);
+  if (!existing) return;
+  chrome.tabs.onUpdated.removeListener(existing.onUpdated);
+  widgetRefreshBySession.delete(key);
+}
+
+/**
+ * @param {string} key
+ * @param {number} tabId
+ */
+function ensureWidgetRefreshListener(key, tabId) {
+  clearWidgetRefreshListener(key);
+
+  const onUpdated = (updatedTabId, info) => {
+    if (updatedTabId !== tabId || info.status !== 'complete') return;
+    void injectMsnWidget(tabId).catch(() => {});
+  };
+
+  chrome.tabs.onUpdated.addListener(onUpdated);
+  widgetRefreshBySession.set(key, { tabId, onUpdated });
 }
 
 /**
@@ -212,6 +222,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       const existing = (await chrome.storage.session.get(key))[key];
       if (typeof existing === 'number') {
+        clearWidgetRefreshListener(key);
         try {
           await chrome.tabs.remove(existing);
         } catch {
@@ -222,6 +233,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (created.id == null) {
         return { ok: false, error: 'create_failed' };
       }
+      ensureWidgetRefreshListener(key, created.id);
       await injectMsnWidgetWhenReady(created.id);
       await chrome.storage.session.set({ [key]: created.id });
       notifyLtiPage(tabId, frameId, 'Running (quiz tab)', false);
@@ -274,6 +286,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       } catch {
         // may already be closed
       }
+      clearWidgetRefreshListener(key);
       await chrome.storage.session.remove(key);
       notifyLtiPage(tabId, frameId, 'Stopped (quiz tab closed)', false);
       return { ok: true };
@@ -306,6 +319,7 @@ chrome.tabs.onRemoved.addListener(async (removedTabId) => {
   const all = await chrome.storage.session.get(null);
   for (const [k, v] of Object.entries(all)) {
     if (k.startsWith(SESSION_PREFIX) && v === removedTabId) {
+      clearWidgetRefreshListener(k);
       const body = k.slice(SESSION_PREFIX.length);
       const li = body.lastIndexOf('-');
       if (li > 0) {
