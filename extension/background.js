@@ -11,6 +11,125 @@ function sessionKey(tabId, frameId = 0) {
 /**
  * @param {number} tabId
  */
+async function injectMsnWidget(tabId) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: function injectWidget() {
+      const widgetId = 'd2l-lti-proctor-msn-widget';
+      if (document.getElementById(widgetId)) {
+        return;
+      }
+
+      const host = document.createElement('section');
+      host.id = widgetId;
+      host.setAttribute('aria-label', 'MSN widget');
+      host.style.cssText = [
+        'position:fixed',
+        'right:12px',
+        'bottom:12px',
+        'width:min(420px,calc(100vw - 24px))',
+        'height:min(320px,calc(100vh - 24px))',
+        'z-index:2147483647',
+        'border:1px solid #c8c8c8',
+        'border-radius:10px',
+        'overflow:hidden',
+        'background:#ffffff',
+        'box-shadow:0 8px 24px rgba(0,0,0,0.3)',
+      ].join(';');
+
+      const header = document.createElement('div');
+      header.style.cssText = [
+        'height:34px',
+        'display:flex',
+        'align-items:center',
+        'justify-content:space-between',
+        'padding:0 10px',
+        'font-family:Arial,sans-serif',
+        'font-size:12px',
+        'font-weight:600',
+        'background:#f3f3f3',
+        'border-bottom:1px solid #d7d7d7',
+      ].join(';');
+      header.textContent = 'Quick widget';
+
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.setAttribute('aria-label', 'Close widget');
+      closeBtn.textContent = 'x';
+      closeBtn.style.cssText = [
+        'border:0',
+        'background:transparent',
+        'font-size:14px',
+        'line-height:1',
+        'cursor:pointer',
+        'padding:4px 6px',
+      ].join(';');
+      closeBtn.addEventListener('click', function () {
+        host.remove();
+      });
+      header.appendChild(closeBtn);
+
+      const frame = document.createElement('iframe');
+      frame.src = 'https://www.msn.com/';
+      frame.setAttribute('title', 'MSN content');
+      frame.setAttribute('loading', 'eager');
+      frame.style.cssText = [
+        'display:block',
+        'width:100%',
+        'height:calc(100% - 34px)',
+        'border:0',
+      ].join(';');
+
+      host.appendChild(header);
+      host.appendChild(frame);
+      (document.body || document.documentElement).appendChild(host);
+    },
+  });
+}
+
+/**
+ * @param {number} tabId
+ */
+async function injectMsnWidgetWhenReady(tabId) {
+  const maybeInject = async () => {
+    try {
+      await injectMsnWidget(tabId);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  if (await maybeInject()) {
+    return;
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const timeoutId = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      resolve();
+    }, 12000);
+
+    const onUpdated = async (updatedTabId, info) => {
+      if (updatedTabId !== tabId || info.status !== 'complete' || settled) return;
+      if (await maybeInject()) {
+        settled = true;
+        clearTimeout(timeoutId);
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+        resolve();
+      }
+    };
+
+    chrome.tabs.onUpdated.addListener(onUpdated);
+  });
+}
+
+/**
+ * @param {number} tabId
+ */
 async function injectPauseOverlay(tabId) {
   await chrome.scripting.executeScript({
     target: { tabId, allFrames: true },
@@ -103,6 +222,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (created.id == null) {
         return { ok: false, error: 'create_failed' };
       }
+      await injectMsnWidgetWhenReady(created.id);
       await chrome.storage.session.set({ [key]: created.id });
       notifyLtiPage(tabId, frameId, 'Running (quiz tab)', false);
       return { ok: true, quizTabId: created.id };
