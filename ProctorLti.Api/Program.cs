@@ -4,8 +4,10 @@ using System.Text.Json;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Options;
 using ProctorLti.Api.Models;
+using ProctorLti.Api.Hubs;
 using ProctorLti.Api.Options;
 using ProctorLti.Api.Services;
+using ProctorLti.Api.Services.Lms;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,12 +21,22 @@ builder.Services.AddOptions<LtiToolOptions>()
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
+builder.Services.AddOptions<LmsOptions>()
+    .BindConfiguration(LmsOptions.SectionName);
+
 builder.Services.AddMemoryCache();
 builder.Services.AddHttpClient("platform-jwks");
+builder.Services.AddHttpClient(D2lLmsProvider.ClientName);
+builder.Services.AddHttpClient(CanvasLmsProvider.ClientName);
 builder.Services.AddSingleton<OidcStateService>();
 builder.Services.AddSingleton<PlatformJwksProvider>();
 builder.Services.AddSingleton<LtiLaunchValidator>();
 builder.Services.AddSingleton<LaunchSessionStore>();
+builder.Services.AddSingleton<D2lLmsProvider>();
+builder.Services.AddSingleton<CanvasLmsProvider>();
+builder.Services.AddSingleton<ILmsService, LmsService>();
+
+builder.Services.AddSignalR();
 
 builder.Services.AddCors(o =>
 {
@@ -57,7 +69,9 @@ if (serveSpa)
         OnPrepareResponse = ctx =>
         {
             var path = ctx.Context.Request.Path.Value ?? "";
-            if (path.StartsWith("/shell", StringComparison.OrdinalIgnoreCase) || path == "/" || path == "")
+            if (path.StartsWith("/shell", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("/proctor", StringComparison.OrdinalIgnoreCase)
+                || path == "/" || path == "")
             {
                 var ancestors = $"'self' {lti.PlatformIssuer.TrimEnd('/')} {GetOrigin(lti.PlatformIssuer)}".Trim();
                 ctx.Context.Response.Headers.ContentSecurityPolicy = $"frame-ancestors {ancestors}";
@@ -74,6 +88,8 @@ app.MapGet("/api/session/{id}", (string id, LaunchSessionStore store) =>
     var boot = store.TryGet(id);
     return boot is null ? Results.NotFound() : Results.Json(boot);
 });
+
+app.MapHub<ProctorHub>("/hubs/proctor");
 
 app.MapGet("/lti/login", HandleLogin);
 app.MapPost("/lti/login", HandleLogin);
@@ -97,6 +113,12 @@ if (serveSpa)
     {
         OnPrepareResponse = ctx =>
         {
+            var path = ctx.Context.Request.Path.Value ?? "";
+            if (!path.StartsWith("/shell", StringComparison.OrdinalIgnoreCase)
+                && !path.StartsWith("/proctor", StringComparison.OrdinalIgnoreCase)
+                && path != "/" && path != "")
+                return;
+
             var ancestors = $"'self' {lti.PlatformIssuer.TrimEnd('/')} {GetOrigin(lti.PlatformIssuer)}".Trim();
             ctx.Context.Response.Headers.ContentSecurityPolicy = $"frame-ancestors {ancestors}";
         },
