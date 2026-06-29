@@ -12,6 +12,73 @@ function sessionKey(tabId, frameId = 0) {
 }
 
 /**
+ * Swallow LMS "leave site?" prompts so Stop / tab close does not hang on a dialog.
+ * Must run while the tab is still open — onRemoved is too late.
+ *
+ * @param {number} tabId
+ */
+async function suppressBeforeUnload(tabId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      func: function suppressUnloadPrompt() {
+        if (window.__proctorUnloadSuppressed) return;
+        window.__proctorUnloadSuppressed = true;
+        try {
+          window.onbeforeunload = null;
+        } catch {
+          // ignore
+        }
+        const swallow = (e) => {
+          e.stopImmediatePropagation();
+        };
+        window.addEventListener('beforeunload', swallow, true);
+        document.addEventListener('beforeunload', swallow, true);
+        const add = EventTarget.prototype.addEventListener;
+        EventTarget.prototype.addEventListener = function (type, listener, options) {
+          if (type === 'beforeunload') return;
+          return add.call(this, type, listener, options);
+        };
+      },
+    });
+  } catch {
+    // cross-origin frames may be inaccessible
+  }
+}
+
+/**
+ * @param {number} tabId
+ * @returns {Promise<void>}
+ */
+function whenTabComplete(tabId) {
+  return new Promise((resolve) => {
+    const done = () => {
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      resolve();
+    };
+    /** @param {number} id @param {chrome.tabs.TabChangeInfo} info */
+    const onUpdated = (id, info) => {
+      if (id === tabId && info.status === 'complete') done();
+    };
+    chrome.tabs.onUpdated.addListener(onUpdated);
+    void chrome.tabs.get(tabId).then(
+      (t) => {
+        if (t.status === 'complete') done();
+      },
+      () => done(),
+    );
+  });
+}
+
+/**
+ * @param {number} tabId
+ */
+async function closeTabQuietly(tabId) {
+  await suppressBeforeUnload(tabId);
+  await chrome.tabs.remove(tabId);
+}
+
+/**
  * @param {number} tabId
  */
 async function injectMsnWidget(tabId) {
@@ -305,7 +372,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (typeof existing === 'number') {
         clearWidgetRefreshListener(key);
         try {
-          await chrome.tabs.remove(existing);
+            await closeTabQuietly(existing);
         } catch {
           // ignore
         }
@@ -316,6 +383,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       ensureWidgetRefreshListener(key, created.id);
       await injectMsnWidgetWhenReady(created.id);
+      await whenTabComplete(created.id);
+      await suppressBeforeUnload(created.id);
       await chrome.storage.session.set({ [key]: created.id });
       notifyLtiPage(tabId, frameId, 'Running (quiz tab)', false);
       return { ok: true, quizTabId: created.id };
@@ -363,6 +432,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.op === 'stop') {
       try {
         await clearPauseOverlay(quizTabId);
+        await closeTabQuietly(quizTabId);
         await chrome.tabs.remove(quizTabId);
       } catch {
         // may already be closed
